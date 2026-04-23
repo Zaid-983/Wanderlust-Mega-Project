@@ -1,3 +1,10 @@
 .terraform/
 .terraform.lock.hcl
 terraform.tfstate
+
+
+*.pem
+jenkins-master-key.pem 
+
+
+eks-credentials.txt
