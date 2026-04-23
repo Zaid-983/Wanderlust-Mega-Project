@@ -191,3 +191,4 @@ resource "local_sensitive_file" "eks_credentials" {
   filename        = "${path.module}/eks-credentials.txt"
   file_permission = "0400"
 }
+

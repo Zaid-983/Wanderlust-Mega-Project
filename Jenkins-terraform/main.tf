@@ -116,7 +116,7 @@ resource "aws_security_group" "allow_user_to_connect" {
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
-  
+
   egress {
     description = "Allow all outgoing traffic"
     from_port   = 0
@@ -152,7 +152,7 @@ resource "aws_instance" "jenkins_master" {
 }
 
 # =========================
-# Jenkins Agent Node
+# Jenkins Master Node
 # =========================
 resource "aws_instance" "jenkins_agent" {
   ami             = var.ami_id
