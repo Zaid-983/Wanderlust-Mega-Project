@@ -151,22 +151,4 @@ resource "aws_instance" "jenkins_master" {
   }
 }
 
-# =========================
-# Jenkins Master Node
-# =========================
-resource "aws_instance" "jenkins_agent" {
-  ami             = var.ami_id
-  instance_type   = var.instance_type
-  key_name        = aws_key_pair.deployer.key_name
-  security_groups = [aws_security_group.allow_user_to_connect.name]
-  user_data       = file("userdata-agent.sh")
 
-  tags = {
-    Name = "Jenkins-Agent"
-  }
-
-  root_block_device {
-    volume_size = 30
-    volume_type = "gp3"
-  }
-}
