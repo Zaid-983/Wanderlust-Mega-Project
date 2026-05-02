@@ -148,9 +148,7 @@ resource "aws_iam_access_key" "eks_admin_key" {
 
 # ──────────────────────────────────────────────────────────────
 # Save credentials to local file (for use on Jenkins Agent)
-# File is created in your Jenkins-terraform/ folder
-# ADD eks-credentials.txt TO .gitignore IMMEDIATELY
-# ──────────────────────────────────────────────────────────────
+
 resource "local_sensitive_file" "eks_credentials" {
   content = <<-EOT
     [eks-admin]

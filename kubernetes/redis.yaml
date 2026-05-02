@@ -16,18 +16,73 @@ spec:
       labels:
         app: redis
     spec:
+      # ── Graceful Termination ─────────────────────────────────────────────
+      # Gives Redis time to finish an AOF/RDB flush before forceful kill.
+      terminationGracePeriodSeconds: 30
+
       containers:
         - name: redis
           image: redis
           ports:
             - containerPort: 6379
+
+          # ── Startup Probe ────────────────────────────────────────────────
+          # Redis loads dump.rdb from disk on boot — 100s budget
+          startupProbe:
+            exec:
+              command:
+                - redis-cli
+                - ping
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 20
+            successThreshold: 1
+            timeoutSeconds: 3
+
+          # ── Liveness Probe ───────────────────────────────────────────────
+          # On failure → K8s RESTARTS the container (self-healing)
+          livenessProbe:
+            exec:
+              command:
+                - redis-cli
+                - ping
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            failureThreshold: 3
+            successThreshold: 1
+            timeoutSeconds: 3
+
+          # ── Readiness Probe ──────────────────────────────────────────────
+          # On failure → pod removed from Service endpoints (no app traffic)
+          readinessProbe:
+            exec:
+              command:
+                - redis-cli
+                - ping
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+            successThreshold: 2
+            timeoutSeconds: 3
+
           volumeMounts:
             - name: mongo-storage
-              mountPath: /var/lib/redis/dump.rdb
+              mountPath: /data
+
+          # ── Resource Limits ──────────────────────────────────────────────
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "250m"
+
       volumes:
         - name: mongo-storage
           persistentVolumeClaim:
             claimName: mongo-pvc
+
 ---
 apiVersion: v1
 kind: Service
@@ -35,6 +90,7 @@ metadata:
   name: redis-service
   namespace: wanderlust
 spec:
+  type: ClusterIP
   selector:
     app: redis
   ports:

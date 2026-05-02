@@ -2,11 +2,12 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: mongo-pvc
-  namespace: wanderlust
+  namespace: wanderlust          # ← PVC IS namespaced, this is correct ✅
 spec:
   accessModes:
     - ReadWriteOnce
-  storageClassName: ""
+  storageClassName: ""           # ← matches PV storageClassName ✅
+  volumeName: mongo-pv           # ← added: bind to specific PV explicitly
   resources:
     requests:
-      storage: 5Gi
+      storage: 5Gi               # ← must be <= PV capacity (5Gi = 5Gi ✅)

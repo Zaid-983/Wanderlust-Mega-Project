@@ -2,12 +2,23 @@ apiVersion: v1
 kind: PersistentVolume
 metadata:
   name: mongo-pv
-  namespace: wanderlust
+  # ── REMOVED namespace — PVs are cluster-scoped, not namespaced ──────────
 spec:
   capacity:
     storage: 5Gi
   volumeMode: Filesystem
   accessModes:
     - ReadWriteOnce
+
+  # ── Added storageClassName to match PVC ──────────────────────────────────
+  storageClassName: ""          # empty string = manual/static provisioning
+                                # must match PVC storageClassName exactly
+
+  # ── Added reclaim policy ─────────────────────────────────────────────────
+  # Delete = PV cleaned up when PVC deleted (good for dev)
+  # Retain = PV kept when PVC deleted (good for production data safety)
+  persistentVolumeReclaimPolicy: Retain
+
   hostPath:
-    path: /data/db
+    path: /data/db              # fine for local/minikube
+                                # on EKS use awsElasticBlockStore instead

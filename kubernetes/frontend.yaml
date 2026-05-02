@@ -1,3 +1,4 @@
+# frontend.yaml — Complete Self-Healing Configuration
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -6,7 +7,7 @@ metadata:
   labels:
     app: frontend
 spec:
-  replicas: 1
+  replicas: 2                  # HPA overrides this dynamically
   selector:
     matchLabels:
       app: frontend
@@ -16,12 +17,59 @@ spec:
       labels:
         app: frontend
     spec:
+      terminationGracePeriodSeconds: 15   # frontend is stateless, fast shutdown
+
       containers:
         - name: frontend
           image: trainwithshubham/wanderlust-frontend-beta:v2.2
           ports:
             - containerPort: 5173
+
+          # ── LAYER 1: Startup Probe ─────────────────────────────────
+          startupProbe:
+            httpGet:
+              path: /
+              port: 5173
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 20
+            successThreshold: 1
+            timeoutSeconds: 3
+
+          # ── LAYER 2: Liveness Probe ────────────────────────────────
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 5173
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            failureThreshold: 3    # 3 × 20s = 60s before restart
+            successThreshold: 1
+            timeoutSeconds: 5
+
+          # ── LAYER 3: Readiness Probe ───────────────────────────────
+            httpGet:
+              path: /
+              port: 5173
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+            successThreshold: 2    # 2 passes needed before entering LB
+            timeoutSeconds: 3
+
+          # ── Resource Limits (REQUIRED for HPA) ────────────────────
+          # Frontend (Vite) is lighter than backend.
+          # Still needs requests defined or HPA won't work.
+          resources:
+            requests:
+              memory: "64Mi"       # ← HPA monitors this
+              cpu: "50m"           # ← HPA monitors this
+            limits:
+              memory: "128Mi"
+              cpu: "200m"
+
 ---
+# ── Frontend Service ──────────────────────────────────────────
 apiVersion: v1
 kind: Service
 metadata:
@@ -36,3 +84,65 @@ spec:
       targetPort: 5173
       protocol: TCP
       nodePort: 31000
+
+---
+# ── LAYER 4: HPA for Frontend ─────────────────────────────────
+# Frontend scales cheaper than backend (lower memory/cpu).
+# maxReplicas: 6 is sufficient for most traffic patterns.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: frontend-hpa
+  namespace: wanderlust
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: frontend-deployment
+
+  minReplicas: 2
+  maxReplicas: 6
+
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 65   # scale up when avg CPU > 65% of 50m
+
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 75   # scale up when avg Memory > 75% of 64Mi
+
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 30
+      policies:
+        - type: Pods
+          value: 2                 # add 2 pods at a time
+          periodSeconds: 30
+
+    scaleDown:
+      stabilizationWindowSeconds: 120   # wait 2 min before scaling down
+      policies:
+        - type: Pods
+          value: 1                      # remove 1 pod at a time
+          periodSeconds: 60
+
+---
+# ── LAYER 5: PodDisruptionBudget for Frontend ────────────────
+# Ensures at least 1 frontend pod is always serving users
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: frontend-pdb
+  namespace: wanderlust
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: frontend

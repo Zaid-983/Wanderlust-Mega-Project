@@ -16,14 +16,87 @@ spec:
       labels:
         app: mongo
     spec:
+      # ── Graceful Termination ─────────────────────────────────────────────
+      # Gives MongoDB time to flush writes and close connections cleanly
+      # before the pod is forcefully killed. Critical for data safety.
+      terminationGracePeriodSeconds: 60
+
       containers:
         - name: mongo
           image: mongo
           ports:
             - containerPort: 27017
+
+          # ── Startup Probe ────────────────────────────────────────────────
+          # MongoDB takes longer to boot than HTTP apps — it replays the
+          # oplog and runs journal recovery on startup.
+          # exec probe runs mongosh inside the container (no HTTP endpoint).
+          # 30 failures × 10s = 300s (5 min) startup budget.
+          startupProbe:
+            exec:
+              command:
+                - mongosh
+                - --eval
+                - "db.adminCommand('ping')"
+            initialDelaySeconds: 20   # give mongo time to begin init
+            periodSeconds: 10
+            failureThreshold: 30      # 5 min total budget for slow starts
+            successThreshold: 1
+            timeoutSeconds: 5
+
+          # ── Liveness Probe ───────────────────────────────────────────────
+          # Checks if mongod process is alive and accepting commands.
+          # 'ping' is the lightest possible admin command — no data read.
+          # On failure → K8s RESTARTS the container (self-healing).
+          # Catches: frozen mongod, OOM-killed process, deadlocked journal.
+          livenessProbe:
+            exec:
+              command:
+                - mongosh
+                - --eval
+                - "db.adminCommand('ping')"
+            initialDelaySeconds: 30   # wait after startup probe passes
+            periodSeconds: 20         # check every 20s
+            failureThreshold: 3       # restart after 3 failures (60s)
+            successThreshold: 1
+            timeoutSeconds: 5         # fail if mongosh hangs >5s
+
+          # ── Readiness Probe ──────────────────────────────────────────────
+          # Checks if MongoDB is ready to accept application connections.
+          # Goes beyond liveness — verifies the DB is actually queryable.
+          # On failure → pod removed from Service endpoints (no app traffic).
+          # Catches: replica set elections, index builds, initial sync.
+          readinessProbe:
+            exec:
+              command:
+                - mongosh
+                - --eval
+                - >
+                  var status = db.adminCommand('ping');
+                  if (status.ok !== 1) { quit(1); }
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            failureThreshold: 3       # pull from service after 3 failures
+            successThreshold: 2       # 2 passes needed to re-add to service
+            timeoutSeconds: 5
+
           volumeMounts:
             - name: mongo-storage
               mountPath: /data/db
+
+          # ── Resource Limits ──────────────────────────────────────────────
+          # MongoDB is memory-hungry. Without limits, a runaway query can
+          # OOM the entire node. With limits, K8s OOM-kills just this pod
+          # and the liveness probe triggers a clean restart.
+          # Tune these based on your dataset size.
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+
       volumes:
         - name: mongo-storage
           persistentVolumeClaim:
@@ -36,6 +109,8 @@ metadata:
   name: mongo-service
   namespace: wanderlust
 spec:
+  # ClusterIP is correct for databases — never expose MongoDB via NodePort
+  type: ClusterIP
   selector:
     app: mongo
   ports:

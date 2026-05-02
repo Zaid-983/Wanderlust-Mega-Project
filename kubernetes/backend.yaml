@@ -1,3 +1,4 @@
+# RESOURCE 1: Deployment
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -6,7 +7,7 @@ metadata:
   labels:
     app: backend
 spec:
-  replicas: 1
+  replicas: 2                        # HPA will override this value at runtime
   selector:
     matchLabels:
       app: backend
@@ -16,11 +17,65 @@ spec:
       labels:
         app: backend
     spec:
+      terminationGracePeriodSeconds: 30  # finish in-flight requests before kill
+
       containers:
         - name: backend
           image: trainwithshubham/wanderlust-backend-beta:v2.1
           ports:
             - containerPort: 8080
+
+          # ── Startup Probe ──────────────────────────────────────────
+          # PURPOSE : Blocks liveness from running during app boot
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10    # wait 10s before first check
+            periodSeconds: 10          # check every 10s
+            failureThreshold: 30       # kill pod if still failing after 300s
+            successThreshold: 1        # 1 pass = startup complete
+            timeoutSeconds: 5
+
+          # ── Liveness Probe ─────────────────────────────────────────
+          # PURPOSE : Detect and recover from broken/deadlocked app
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 20          # check every 20s
+            failureThreshold: 3        # restart after 3 failures = 60s
+            successThreshold: 1
+            timeoutSeconds: 5
+
+          # ── Readiness Probe ────────────────────────────────────────
+          # PURPOSE : Control traffic routing, NOT container restart
+          # NOTE    : Use /ready endpoint that checks DB connectivity
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+            successThreshold: 2        # needs 2 consecutive passes to re-enter LB
+            timeoutSeconds: 3
+
+          # ── Resources ─────────────────────────────────────────────
+          # CRITICAL: HPA CANNOT work without requests defined.
+          # HPA formula → utilization% = actual_usage ÷ requests
+          resources:
+            requests:
+              memory: "128Mi"          # HPA threshold baseline
+              cpu: "100m"              # HPA threshold baseline
+            limits:
+              memory: "256Mi"          # OOM kill at this limit → liveness restarts
+              cpu: "500m"
+
+# ──────────────────────────────────────────────────────────────
+# RESOURCE 2: Service
+# ──────────────────────────────────────────────────────────────
 ---
 apiVersion: v1
 kind: Service
@@ -36,3 +91,73 @@ spec:
       targetPort: 8080
       protocol: TCP
       nodePort: 31100
+
+# ──────────────────────────────────────────────────────────────
+# RESOURCE 3: HorizontalPodAutoscaler
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: backend-hpa
+  namespace: wanderlust
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: backend-deployment      # must match Deployment name above
+
+  minReplicas: 2                  # never go below 2 (single pod = no HA)
+  maxReplicas: 10                 # safety ceiling
+
+  metrics:
+    # Scale trigger 1: CPU
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 60  # scale up when avg CPU > 60% of 100m = 60m
+
+    # Scale trigger 2: Memory
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 70  # scale up when avg Memory > 70% of 128Mi = 89Mi
+
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 30     # react within 30s to traffic spike
+      policies:
+        - type: Percent
+          value: 100                     # allow doubling pod count at once
+          periodSeconds: 30
+        - type: Pods
+          value: 3                       # or add 3 pods — whichever is MORE
+          periodSeconds: 30
+      selectPolicy: Max                  # aggressive scale-up
+
+    scaleDown:
+      stabilizationWindowSeconds: 180    # wait 3 min after load drops
+      policies:                          # avoids yo-yo scaling
+        - type: Percent
+          value: 25                      # remove max 25% of pods per step
+          periodSeconds: 60
+
+# ──────────────────────────────────────────────────────────────
+# RESOURCE 4: PodDisruptionBudget
+# Without PDB → K8s could evict ALL pods simultaneously.
+# With PDB    → K8s must keep minAvailable pods running at all times.
+# ──────────────────────────────────────────────────────────────
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: backend-pdb
+  namespace: wanderlust
+spec:
+  minAvailable: 1                 # always keep at least 1 backend pod alive
+  selector:
+    matchLabels:
+      app: backend                # must match Deployment pod labels
