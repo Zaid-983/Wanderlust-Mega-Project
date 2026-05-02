@@ -1,85 +1,140 @@
 @Library('Shared') _
+
 pipeline {
-    agent {label 'Node'}
-    
+    agent {
+        kubernetes {
+            label 'k8s-agent'
+            yaml '''
+                apiVersion: v1
+                kind: Pod
+                metadata:
+                  namespace: jenkins
+                spec:
+                  serviceAccountName: jenkins-agent-sa
+                  containers:
+
+                  # Container 1: JNLP — Jenkins agent connector (REQUIRED)
+                  - name: jnlp
+                    image: jenkins/inbound-agent:latest
+                    resources:
+                      requests:
+                        memory: "256Mi"
+                        cpu: "100m"
+                      limits:
+                        memory: "512Mi"
+                        cpu: "500m"
+
+                  # Container 2: runs git and shell commands
+                  - name: git
+                    image: alpine/git:latest
+                    command:
+                    - sleep
+                    args:
+                    - 9999999
+                    resources:
+                      requests:
+                        memory: "128Mi"
+                        cpu: "50m"
+                      limits:
+                        memory: "256Mi"
+                        cpu: "200m"
+            '''
+        }
+    }
+
     parameters {
         string(name: 'FRONTEND_DOCKER_TAG', defaultValue: '', description: 'Frontend Docker tag of the image built by the CI job')
-        string(name: 'BACKEND_DOCKER_TAG', defaultValue: '', description: 'Backend Docker tag of the image built by the CI job')
+        string(name: 'BACKEND_DOCKER_TAG',  defaultValue: '', description: 'Backend Docker tag of the image built by the CI job')
     }
 
     stages {
-        stage("Workspace cleanup"){
-            steps{
-                script{
+
+        // ── 1. Workspace Cleanup ─────────────────────────────────────────
+        // Runs in jnlp — cleanWs() is a Jenkins plugin call
+        stage("Workspace cleanup") {
+            steps {
+                script {
                     cleanWs()
                 }
             }
         }
-        
+
+        // ── 2. Git Checkout ──────────────────────────────────────────────
+        // Runs in jnlp — shared library handles git checkout
         stage('Git: Code Checkout') {
             steps {
-                script{
-                    code_checkout("https://github.com/LondheShubham153/Wanderlust-Mega-Project.git","main")
+                script {
+                    code_checkout("https://github.com/Zaid-983/Wanderlust-Mega-Project", "main")
                 }
             }
         }
-        
+
+        // ── 3. Verify Tags ───────────────────────────────────────────────
+        // Runs in jnlp — just echo statements, no special container needed
         stage('Verify: Docker Image Tags') {
             steps {
-                script{
+                script {
                     echo "FRONTEND_DOCKER_TAG: ${params.FRONTEND_DOCKER_TAG}"
                     echo "BACKEND_DOCKER_TAG: ${params.BACKEND_DOCKER_TAG}"
                 }
             }
         }
-        
-        
-        stage("Update: Kubernetes manifests"){
-            steps{
-                script{
-                    dir('kubernetes'){
-                        sh """
-                            sed -i -e s/wanderlust-backend-beta.*/wanderlust-backend-beta:${params.BACKEND_DOCKER_TAG}/g backend.yaml
-                        """
+
+        // ── 4. Update Kubernetes Manifests ───────────────────────────────
+        // RUNS in git container — uses sed to update image tags in YAMLs
+        // jnlp (inbound-agent) does not have sed/shell tools guaranteed
+        stage("Update: Kubernetes manifests") {
+            steps {
+                container('git') {                             
+                    script {
+                        dir('kubernetes') {
+                            sh """
+                                sed -i -e s/wanderlust-backend-beta.*/wanderlust-backend-beta:${params.BACKEND_DOCKER_TAG}/g backend.yaml
+                            """
+                        }
+                        dir('kubernetes') {
+                            sh """
+                                sed -i -e s/wanderlust-frontend-beta.*/wanderlust-frontend-beta:${params.FRONTEND_DOCKER_TAG}/g frontend.yaml
+                            """
+                        }
                     }
-                    
-                    dir('kubernetes'){
-                        sh """
-                            sed -i -e s/wanderlust-frontend-beta.*/wanderlust-frontend-beta:${params.FRONTEND_DOCKER_TAG}/g frontend.yaml
-                        """
-                    }
-                    
                 }
             }
         }
-        
-        stage("Git: Code update and push to GitHub"){
-            steps{
-                script{
-                    withCredentials([gitUsernamePassword(credentialsId: 'Github-cred', gitToolName: 'Default')]) {
-                        sh '''
-                        echo "Checking repository status: "
-                        git status
-                    
-                        echo "Adding changes to git: "
-                        git add .
-                        
-                        echo "Commiting changes: "
-                        git commit -m "Updated environment variables"
-                        
-                        echo "Pushing changes to github: "
-                        git push https://github.com/LondheShubham153/Wanderlust-Mega-Project.git main
-                    '''
+
+        // ── 5. Git Push Updated Manifests ────────────────────────────────
+        // RUNS in git container — needs git CLI to commit and push
+        // alpine/git has git pre-installed, jnlp may not
+        stage("Git: Code update and push to GitHub") {
+            steps {
+                container('git') {                             
+                    script {
+                        withCredentials([gitUsernamePassword(credentialsId: 'Github-cred', gitToolName: 'Default')]) {
+                            sh '''
+                                echo "Checking repository status: "
+                                git status
+
+                                echo "Adding changes to git: "
+                                git add .
+
+                                echo "Committing changes: "
+                                git commit -m "Updated environment variables"
+
+                                echo "Pushing changes to GitHub: "
+                                git push https://github.com/Zaid-983/Wanderlust-Mega-Project main
+                            '''
+                        }
                     }
                 }
             }
         }
     }
-  post {
+
+    post {
         success {
             script {
                 emailext attachLog: true,
-                from: 'trainwithshubham@gmail.com',
+                from: 'zaidsiddique983@gmail.com',
                 subject: "Wanderlust Application has been updated and deployed - '${currentBuild.result}'",
                 body: """
                     <html>
@@ -95,15 +150,15 @@ pipeline {
                         </div>
                     </body>
                     </html>
-            """,
-            to: 'trainwithshubham@gmail.com',
-            mimeType: 'text/html'
+                """,
+                to: 'zaidsiddique983@gmail.com',
+                mimeType: 'text/html'
             }
         }
-      failure {
+        failure {
             script {
                 emailext attachLog: true,
-                from: 'trainwithshubham@gmail.com',
+                from: 'zaidsiddique983@gmail.com',
                 subject: "Wanderlust Application build failed - '${currentBuild.result}'",
                 body: """
                     <html>
@@ -116,9 +171,9 @@ pipeline {
                         </div>
                     </body>
                     </html>
-            """,
-            to: 'trainwithshubham@gmail.com',
-            mimeType: 'text/html'
+                """,
+                to: 'zaidsiddique983@gmail.com',
+                mimeType: 'text/html'
             }
         }
     }
