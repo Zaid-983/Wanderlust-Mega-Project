@@ -8,3 +8,4 @@ jenkins-master-key.pem
 
 
 eks-credentials.txt
+terraform.tfstate.backup
