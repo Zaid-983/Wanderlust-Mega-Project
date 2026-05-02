@@ -3,7 +3,7 @@
 # ──────────────────────────────────────────────────────────────────
 
 resource "aws_s3_bucket" "terraform_state" {
-  bucket = "wanderlust-terraform-state-bucket"   # must be globally unique
+  bucket = "wanderlust-terraform-state-bucket-v2"   # must be globally unique
                                                   # change to your project name
 
   # Prevent accidental deletion of state bucket
@@ -91,10 +91,10 @@ resource "aws_dynamodb_table" "terraform_state_lock" {
 # ──────────────────────────────────────────────────────────────────
 terraform {
   backend "s3" {
-    bucket         = "wanderlust-terraform-state-bucket"  # same as above
-    key            = "jenkins/terraform.tfstate"          # path inside bucket
+    bucket         = "wanderlust-terraform-state-bucket-v2"  # same as above
+    key            = "/terraform.tfstate"                 # path inside bucket
                                                           # format: project/env/terraform.tfstate
-    region         = "us-east-1"                          # change to your AWS region
+    region         = "us-east-2"                          # change to your AWS region
 
     # State locking via DynamoDB
     dynamodb_table = "wanderlust-terraform-state-lock"    # same as above
