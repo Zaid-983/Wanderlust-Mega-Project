@@ -36,7 +36,7 @@ resource "aws_iam_policy" "eks_admin_policy" {
           "iam:CreateServiceLinkedRole",
           "iam:DeleteServiceLinkedRole",
           "iam:GetServiceLinkedRoleDeletionStatus"
-          ],
+          ]
         "Resource": "arn:aws:iam::*:role/aws-service-role/eks.amazonaws.com/*"
 
       },
