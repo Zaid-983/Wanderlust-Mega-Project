@@ -29,6 +29,18 @@ resource "aws_iam_policy" "eks_admin_policy" {
         ]
         Resource = "*"
       },
+      {
+        "Sid": "ServiceLinkedRole",
+        "Effect": "Allow",
+        "Action": [
+          "iam:CreateServiceLinkedRole",
+          "iam:DeleteServiceLinkedRole",
+          "iam:GetServiceLinkedRoleDeletionStatus"
+          ],
+        "Resource": "arn:aws:iam::*:role/aws-service-role/eks.amazonaws.com/*"
+
+      },
+    
       # EC2 Access (required for VPC, subnets, SGs, instances)
       {
         Sid    = "EC2FullAccess"
