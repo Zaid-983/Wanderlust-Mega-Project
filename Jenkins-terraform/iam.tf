@@ -123,6 +123,15 @@ resource "aws_iam_policy" "eks_admin_policy" {
       },
       # KMS (optional - for encrypted EKS secrets)
       {
+        Sid    = "LogsAccess"
+        Effect = "Allow"
+        Action = [
+          "logs:*"
+          ]
+        Resource = "*"
+      },
+
+      {
         Sid    = "KMSAccess"
         Effect = "Allow"
         Action = [
