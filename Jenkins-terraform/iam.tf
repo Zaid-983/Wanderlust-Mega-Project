@@ -80,7 +80,9 @@ resource "aws_iam_policy" "eks_admin_policy" {
           "iam:ListOpenIDConnectProviders",
           "iam:TagRole",
           "iam:UntagRole",
-          "iam:TagInstanceProfile"
+          "iam:TagInstanceProfile",
+          "iam:TagOpenIDConnectProvider",
+          "iam:CreateServiceLinkedRole" 
         ]
         Resource = "*"
       },
