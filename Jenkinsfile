@@ -3,7 +3,7 @@
 pipeline {
     agent {
         kubernetes {
-            yaml '''
+            yaml """
                 apiVersion: v1
                 kind: Pod
                 metadata:
@@ -11,44 +11,43 @@ pipeline {
                 spec:
                   serviceAccountName: jenkins-agent-sa
                   containers:
-                  - name: jnlp
-                    image: jenkins/inbound-agent:latest
-                    resources:
-                      requests:
-                        memory: "256Mi"
-                        cpu: "100m"
-                      limits:
-                        memory: "2Gi"        
-                        cpu: "1000m"
-                    volumeMounts:
+                    - name: jnlp
+                      image: jenkins/inbound-agent:latest
+                      resources:
+                        requests:
+                          memory: "256Mi"
+                          cpu: "100m"
+                        limits:
+                          memory: "2Gi"
+                          cpu: "1000m"
+                      volumeMounts:
+                        - name: owasp-cache
+                          mountPath: /var/lib/jenkins/caches/dependency-check
+
+                    - name: docker
+                      image: docker:latest
+                      command:
+                        - sleep
+                      args:
+                        - "9999999"
+                      volumeMounts:
+                        - name: docker-sock
+                          mountPath: /var/run/docker.sock
+
+                  volumes:
                     - name: owasp-cache
-                      mountPath: /var/lib/jenkins/caches/dependency-check                                    
-                
-
-                  - name: docker
-                    image: docker:latest
-                    command:
-                    - sleep
-                    args:
-                    - "9999999"
-                    volumeMounts:
+                      persistentVolumeClaim:
+                        claimName: owasp-cache-pvc
                     - name: docker-sock
-                      mountPath: /var/run/docker.sock
-                   volumes:
-                  - name: owasp-cache
-                    persistentVolumeClaim:
-                      claimName: owasp-cache-pvc
-
-                  - name: docker-sock
-                    hostPath:
-                      path: /var/run/docker.sock
-            '''
+                      hostPath:
+                        path: /var/run/docker.sock
+            """
         }
     }
 
     environment {
-        SONAR_HOME = tool "Sonar"
-        SONAR_SCANNER_OPTS = "-Xmx1024m -Xms256m" 
+        SONAR_HOME         = tool "Sonar"
+        SONAR_SCANNER_OPTS = "-Xmx1024m -Xms256m"
     }
 
     parameters {
@@ -70,7 +69,9 @@ pipeline {
 
         stage("Workspace cleanup") {
             steps {
-                script { cleanWs() }
+                script {
+                    cleanWs()
+                }
             }
         }
 
@@ -82,7 +83,6 @@ pipeline {
             }
         }
 
-        // ── Install Trivy on jnlp container ─────────────────────────────
         stage("Trivy: Install and Filesystem scan") {
             steps {
                 container('docker') {
@@ -107,10 +107,9 @@ pipeline {
 
         stage("OWASP: Dependency check") {
             steps {
-                    script {
-                        owasp_dependency()
-                 }
-                 
+                script {
+                    owasp_dependency()
+                }
             }
         }
 
@@ -187,6 +186,30 @@ pipeline {
                 string(name: 'FRONTEND_DOCKER_TAG', value: "${params.FRONTEND_DOCKER_TAG}"),
                 string(name: 'BACKEND_DOCKER_TAG',  value: "${params.BACKEND_DOCKER_TAG}")
             ]
+        }
+        failure {
+            script {
+                emailext attachLog: true,
+                from: 'trainwithshubham@gmail.com',
+                subject: "Wanderlust CI build failed - '${currentBuild.result}'",
+                body: """
+                    <html>
+                    <body>
+                        <div style="background-color: #FFA07A; padding: 10px; margin-bottom: 10px;">
+                            <p style="color: black; font-weight: bold;">Project: ${env.JOB_NAME}</p>
+                        </div>
+                        <div style="background-color: #90EE90; padding: 10px; margin-bottom: 10px;">
+                            <p style="color: black; font-weight: bold;">Build Number: ${env.BUILD_NUMBER}</p>
+                        </div>
+                        <div style="background-color: #87CEEB; padding: 10px; margin-bottom: 10px;">
+                            <p style="color: black; font-weight: bold;">URL: ${env.BUILD_URL}</p>
+                        </div>
+                    </body>
+                    </html>
+                """,
+                to: 'trainwithshubham@gmail.com',
+                mimeType: 'text/html'
+            }
         }
     }
 }
