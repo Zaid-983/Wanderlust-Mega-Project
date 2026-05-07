@@ -93,20 +93,17 @@ pipeline {
         stage("Trivy: Filesystem scan") {
             steps {
                 container('docker') {
-                    script {
-                        trivy_scan()
-                     }
+                    sh "trivy fs ." 
                 }
             }
         }
 
         stage("OWASP: Dependency check") {
             steps {
-                container('docker') {
                     script {
                         owasp_dependency()
-                    }
                  }
+                 
             }
         }
 
