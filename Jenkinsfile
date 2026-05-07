@@ -3,7 +3,6 @@
 pipeline {
     agent {
         kubernetes {
-            inheritFrom 'k8s-agent'
             yaml '''
                 apiVersion: v1
                 kind: Pod
@@ -26,7 +25,7 @@ pipeline {
                     command:
                     - sleep
                     args:
-                    - infinity
+                    - "9999999"
                     volumeMounts:
                     - name: docker-sock
                       mountPath: /var/run/docker.sock
