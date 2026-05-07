@@ -21,9 +21,10 @@ pipeline {
                         memory: "2Gi"        
                         cpu: "1000m"
                     volumeMounts:
-                - name: owasp-cache                                    
-                  mountPath: /var/lib/jenkins/caches/dependency-check
-                  
+                    - name: owasp-cache
+                      mountPath: /var/lib/jenkins/caches/dependency-check                                    
+                    
+
                   - name: docker
                     image: docker:latest
                     command:
