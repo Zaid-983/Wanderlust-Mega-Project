@@ -18,8 +18,8 @@ pipeline {
                         memory: "256Mi"
                         cpu: "100m"
                       limits:
-                        memory: "512Mi"
-                        cpu: "500m"
+                        memory: "2Gi"        # ← was 512Mi, now 2Gi
+                        cpu: "1000m"
                   - name: docker
                     image: docker:latest
                     command:
@@ -39,6 +39,7 @@ pipeline {
 
     environment {
         SONAR_HOME = tool "Sonar"
+        SONAR_SCANNER_OPTS = "-Xmx1024m -Xms256m" 
     }
 
     parameters {
