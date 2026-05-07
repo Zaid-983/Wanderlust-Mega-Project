@@ -20,19 +20,6 @@ pipeline {
                       limits:
                         memory: "512Mi"
                         cpu: "500m"
-                - name: trivy
-                    image: aquasec/trivy:latest
-                    command:
-                    - sleep
-                     args:
-                    - "9999999"
-                    resources:
-                    requests:
-                    memory: "256Mi"
-                    cpu: "100m"
-                  limits:
-                    memory: "512Mi"
-                    cpu: "500m"
                   - name: docker
                     image: docker:latest
                     command:
@@ -42,12 +29,6 @@ pipeline {
                     volumeMounts:
                     - name: docker-sock
                       mountPath: /var/run/docker.sock
-                  - name: kubectl
-                    image: bitnami/kubectl:latest
-                    command:
-                    - sleep
-                    args:
-                    - infinity
                   volumes:
                   - name: docker-sock
                     hostPath:
@@ -67,8 +48,6 @@ pipeline {
 
     stages {
 
-        // ── 1. Validate ──────────────────────────────────────────────────
-        // Runs in jnlp (default) — no docker/kubectl needed
         stage("Validate Parameters") {
             steps {
                 script {
@@ -79,18 +58,12 @@ pipeline {
             }
         }
 
-        // ── 2. Workspace Cleanup ─────────────────────────────────────────
-        // Runs in jnlp — cleanWs() is a Jenkins plugin call, no container needed
         stage("Workspace cleanup") {
             steps {
-                script {
-                    cleanWs()
-                }
+                script { cleanWs() }
             }
         }
 
-        // ── 3. Git Checkout ──────────────────────────────────────────────
-        // Runs in jnlp — shared library git function, no container needed
         stage('Git: Code Checkout') {
             steps {
                 script {
@@ -99,20 +72,29 @@ pipeline {
             }
         }
 
-        // ── 4. Trivy Scan ────────────────────────────────────────────────
-        // Runs in jnlp — trivy is installed on the agent image
-        stage("Trivy: Filesystem scan") {
+        // ── Install Trivy on jnlp container ─────────────────────────────
+        stage("Install Trivy") {
             steps {
-                 container('trivy') {
-                    script {
-                        trivy_scan()
+                sh '''
+                    apt-get update -y
+                    apt-get install -y wget apt-transport-https gnupg curl
+                    wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | apt-key add -
+                    echo "deb https://aquasecurity.github.io/trivy-repo/deb generic main" | tee /etc/apt/sources.list.d/trivy.list
+                    apt-get update -y
+                    apt-get install -y trivy
+                    trivy --version
+                '''
             }
         }
-    }
-}
 
-        // ── 5. OWASP Dependency Check ────────────────────────────────────
-        // Runs in jnlp — OWASP plugin runs inside Jenkins agent
+        stage("Trivy: Filesystem scan") {
+            steps {
+                script {
+                    trivy_scan()
+                }
+            }
+        }
+
         stage("OWASP: Dependency check") {
             steps {
                 script {
@@ -121,8 +103,6 @@ pipeline {
             }
         }
 
-        // ── 6. SonarQube Analysis ────────────────────────────────────────
-        // Runs in jnlp — SonarQube scanner uses SONAR_HOME tool path
         stage("SonarQube: Code Analysis") {
             steps {
                 script {
@@ -131,8 +111,6 @@ pipeline {
             }
         }
 
-        // ── 7. SonarQube Quality Gate ────────────────────────────────────
-        // Runs in jnlp — waits for SonarQube webhook callback
         stage("SonarQube: Code Quality Gates") {
             steps {
                 script {
@@ -141,8 +119,6 @@ pipeline {
             }
         }
 
-        // ── 8. Env Setup (parallel) ──────────────────────────────────────
-        // Runs shell scripts — jnlp can run bash, no special container needed
         stage('Exporting environment variables') {
             parallel {
                 stage("Backend env setup") {
@@ -166,11 +142,9 @@ pipeline {
             }
         }
 
-        // ── 9. Docker Build ──────────────────────────────────────────────
-        // MUST run in docker container — needs docker CLI to build images
         stage("Docker: Build Images") {
             steps {
-                container('docker') {                          // ← switch to docker container
+                container('docker') {
                     script {
                         dir('backend') {
                             docker_build("wanderlust-backend-beta", "${params.BACKEND_DOCKER_TAG}", "zaidjamal")
@@ -183,11 +157,9 @@ pipeline {
             }
         }
 
-        // ── 10. Docker Push ──────────────────────────────────────────────
-        // MUST run in docker container — needs docker CLI to push to DockerHub
         stage("Docker: Push to DockerHub") {
             steps {
-                container('docker') {                          // ← switch to docker container
+                container('docker') {
                     script {
                         docker_push("wanderlust-backend-beta",  "${params.BACKEND_DOCKER_TAG}",  "zaidjamal")
                         docker_push("wanderlust-frontend-beta", "${params.FRONTEND_DOCKER_TAG}", "zaidjamal")
@@ -197,8 +169,6 @@ pipeline {
         }
     }
 
-    // ── Post: Trigger CD Pipeline ────────────────────────────────────────
-    // Runs in jnlp — archiving artifacts and triggering downstream job
     post {
         success {
             archiveArtifacts artifacts: '*.xml', followSymlinks: false
