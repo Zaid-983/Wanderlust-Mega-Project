@@ -11,3 +11,18 @@ spec:
   resources:
     requests:
       storage: 5Gi               # ← must be <= PV capacity (5Gi = 5Gi ✅)
+
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: owasp-cache-pvc
+  namespace: jenkins
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: ""
+  volumeName: owasp-pv
+  resources:
+    requests:
+      storage: 5Gi
