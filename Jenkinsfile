@@ -74,32 +74,39 @@ pipeline {
 
         // ── Install Trivy on jnlp container ─────────────────────────────
         stage("Install Trivy") {
-            steps {
-                sh '''
-                    apt-get update -y
-                    apt-get install -y wget apt-transport-https gnupg curl
-                    wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | apt-key add -
-                    echo "deb https://aquasecurity.github.io/trivy-repo/deb generic main" | tee /etc/apt/sources.list.d/trivy.list
-                    apt-get update -y
-                    apt-get install -y trivy
-                    trivy --version
-                '''
+        steps {
+            container('docker') {
+            sh '''
+                # Alpine uses apk not apt-get
+                apk add --no-cache curl wget
+
+                # Install trivy via script
+                curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+
+                # Verify
+                trivy --version
+            '''
+                }
             }
         }
 
         stage("Trivy: Filesystem scan") {
             steps {
-                script {
-                    trivy_scan()
+                container('docker') {
+                    script {
+                        trivy_scan()
+                     }
                 }
             }
         }
 
         stage("OWASP: Dependency check") {
             steps {
-                script {
-                    owasp_dependency()
-                }
+                container('docker') {
+                    script {
+                        owasp_dependency()
+                    }
+                 }
             }
         }
 
