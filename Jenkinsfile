@@ -20,6 +20,19 @@ pipeline {
                       limits:
                         memory: "512Mi"
                         cpu: "500m"
+                - name: trivy
+                    image: aquasec/trivy:latest
+                    command:
+                    - sleep
+                     args:
+                    - "9999999"
+                    resources:
+                    requests:
+                    memory: "256Mi"
+                    cpu: "100m"
+                  limits:
+                    memory: "512Mi"
+                    cpu: "500m"
                   - name: docker
                     image: docker:latest
                     command:
@@ -90,11 +103,13 @@ pipeline {
         // Runs in jnlp — trivy is installed on the agent image
         stage("Trivy: Filesystem scan") {
             steps {
-                script {
-                    trivy_scan()
-                }
+                 container('trivy') {
+                    script {
+                        trivy_scan()
             }
         }
+    }
+}
 
         // ── 5. OWASP Dependency Check ────────────────────────────────────
         // Runs in jnlp — OWASP plugin runs inside Jenkins agent
