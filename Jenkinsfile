@@ -23,7 +23,7 @@ pipeline {
                     volumeMounts:
                     - name: owasp-cache
                       mountPath: /var/lib/jenkins/caches/dependency-check                                    
-                    
+                
 
                   - name: docker
                     image: docker:latest
@@ -34,7 +34,11 @@ pipeline {
                     volumeMounts:
                     - name: docker-sock
                       mountPath: /var/run/docker.sock
-                  volumes:
+                   volumes:
+                  - name: owasp-cache
+                    persistentVolumeClaim:
+                      claimName: owasp-cache-pvc
+
                   - name: docker-sock
                     hostPath:
                       path: /var/run/docker.sock
