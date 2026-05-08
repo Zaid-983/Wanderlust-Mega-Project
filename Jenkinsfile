@@ -33,6 +33,8 @@ pipeline {
                       volumeMounts:
                         - name: docker-sock
                           mountPath: /var/run/docker.sock
+                        - name: owasp-cache
+                          mountPath: /var/lib/jenkins/caches/dependency-check  # 👈 Added PVC mount
 
                   volumes:
                     - name: owasp-cache
@@ -187,6 +189,5 @@ pipeline {
                 string(name: 'BACKEND_DOCKER_TAG',  value: "${params.BACKEND_DOCKER_TAG}")
             ]
         }
-
     }
 }
