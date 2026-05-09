@@ -10,6 +10,8 @@ pipeline {
                   namespace: jenkins
                 spec:
                   serviceAccountName: jenkins-agent-sa
+                  nodeSelector:
+                    kubernetes.io/hostname: ip-192-168-91-129.us-east-2.compute.internal
                   containers:
                     - name: jnlp
                       image: jenkins/inbound-agent:latest
